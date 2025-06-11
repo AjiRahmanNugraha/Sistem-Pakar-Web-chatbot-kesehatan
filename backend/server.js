@@ -24,11 +24,13 @@ mongoose.connect(process.env.MONGO_URI, {
 const authRoutes = require('./routes/auth');
 const knowledgeBaseRoutes = require('./routes/knowledgeBase');
 const chatRoutes = require('./routes/chat');
+const adminRoutes = require('./routes/admin');
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/knowledge-base', knowledgeBaseRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
   res.send('Sistem Pakar Dokter Backend is running');

@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 
 const knowledgeBaseSchema = new mongoose.Schema({
-  rule: {
+  symptoms: {
+    type: [String],
+    required: true,
+  },
+  diagnosis: {
     type: String,
     required: true,
   },

@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 function UserDashboard() {
   const [message, setMessage] = useState('');
   const [conversation, setConversation] = useState([]);
+  const [language, setLanguage] = useState('english');
 
   const token = localStorage.getItem('token');
 
@@ -17,7 +18,7 @@ function UserDashboard() {
     try {
       const res = await axios.post(
         'http://localhost:5000/api/chat',
-        { message },
+        { message, language },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const botResponse = { sender: 'bot', text: res.data.response };
@@ -33,6 +34,17 @@ function UserDashboard() {
       <Navbar />
       <div style={{ maxWidth: 600, margin: 'auto', padding: 20, display: 'flex', flexDirection: 'column', height: '90vh' }}>
         <h2>User Dashboard - Chat Diagnosis</h2>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="language-select">Select Language: </label>
+          <select
+            id="language-select"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="english">English</option>
+            <option value="indonesian">Indonesian</option>
+          </select>
+        </div>
         <div style={{ flexGrow: 1, border: '1px solid #ccc', overflowY: 'auto', padding: 10, marginBottom: 10, display: 'flex', flexDirection: 'column' }}>
           {conversation.map((msg, index) => (
             <div

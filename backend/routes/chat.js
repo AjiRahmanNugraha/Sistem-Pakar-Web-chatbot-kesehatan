@@ -14,22 +14,17 @@ router.post('/', async (req, res) => {
   const { message, sessionId } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim().length < 3) {
-    return res.status(400).json({ error: 'Pesan harus berupa teks minimal 3 karakter' });
+    return res.status(400).json({ error: 'Message must be at least 3 characters long' });
   }
 
   try {
     const session = SessionManager.getOrCreateSession(sessionId);
     const symptomList = await Symptom.find({});
     const rules = await KnowledgeBase.find({});
-
-    // Create a set of symptom names for quick lookup
     const symptomSet = new Set(symptomList.map(s => s.name.toLowerCase()));
-
-    // Preprocess user message
     const normalizedMessage = preprocessForLanguage(message);
-
-    // Extract symptoms from message by matching symptom list
     const extractedSymptoms = [];
+
     for (const symptom of symptomSet) {
       const regex = new RegExp(`\\b${symptom.replace(/ /g, '\\s+')}\\b`, 'i');
       if (regex.test(normalizedMessage)) {
@@ -37,30 +32,29 @@ router.post('/', async (req, res) => {
       }
     }
 
-    if (message.toLowerCase().includes('reset') || message.toLowerCase().includes('mulai baru')) {
+    if (message.toLowerCase().includes('reset') || message.toLowerCase().includes('start over')) {
       session.reset();
       return res.json({
-        response: "Percakapan telah direset. Silakan mulai dengan menjelaskan gejala Anda.",
+        response: "Conversation has been reset. Please start by describing your symptoms.",
         sessionId: session.id
       });
     }
 
-    if (message.match(/\b(hi|halo|hello|hai)\b/i)) {
+    if (message.match(/\b(hi|hello|hey|halo|hai)\b/i)) {
       session.reset();
       return res.json({
-        response: "Halo! Saya adalah asisten diagnosa kesehatan. Silakan jelaskan gejala pertama yang Anda alami.",
+        response: "Hello! I am your health diagnosis assistant. Please describe your first symptom.",
         sessionId: session.id
       });
     }
 
-    if (message.match(/\b(terima kasih|thanks|makasih)\b/i)) {
+    if (message.match(/\b(thanks|thank you|makasih|terima kasih)\b/i)) {
       return res.json({
-        response: "Sama-sama! Jika ada gejala lain, silakan jelaskan. Ketik 'reset' untuk memulai percakapan baru.",
+        response: "You're welcome! If you have more symptoms, feel free to describe them. Type 'reset' to start a new conversation.",
         sessionId: session.id
       });
     }
 
-    // Add extracted symptoms to session
     extractedSymptoms.forEach(symptom => {
       if (!session.symptoms.has(symptom)) {
         session.symptoms.add(symptom);
@@ -74,13 +68,13 @@ router.post('/', async (req, res) => {
     let response = "";
 
     if (addedSymptoms.length > 0) {
-      response += `Gejala "${addedSymptoms.join(', ')}" telah dicatat.\n\n`;
+      response += `Symptom(s) "${addedSymptoms.join(', ')}" have been recorded.\n\n`;
     }
 
     if (session.symptoms.size < 3) {
-      response += `Saat ini saya memiliki ${session.symptoms.size} gejala. `;
-      response += "Silakan tambahkan gejala lain untuk analisa lebih akurat.\n";
-      response += "Contoh: 'saya juga mengalami demam dan sakit kepala'";
+      response += `Currently, I have ${session.symptoms.size} symptom(s). `;
+      response += "Please provide more symptoms for a more accurate analysis.\n";
+      response += "Example: 'I also have a fever and headache.'";
 
       return res.json({
         response: response,
@@ -90,12 +84,10 @@ router.post('/', async (req, res) => {
     }
 
     const userSymptoms = new Set([...session.symptoms].map(s => s.toLowerCase()));
-
     const matchedRules = [];
 
     for (const rule of rules) {
       const ruleSymptoms = new Set(rule.symptoms.map(s => s.toLowerCase()));
-
       let allMatched = true;
       for (const symptom of ruleSymptoms) {
         if (!userSymptoms.has(symptom)) {
@@ -103,7 +95,6 @@ router.post('/', async (req, res) => {
           break;
         }
       }
-
       if (allMatched) {
         matchedRules.push({
           diagnosis: rule.diagnosis,
@@ -120,14 +111,14 @@ router.post('/', async (req, res) => {
       session.diagnosis = bestMatch.diagnosis;
       session.confidence = 1.0;
 
-      response += `Berdasarkan gejala yang Anda sebutkan: ${[...session.symptoms].join(', ')}\n\n`;
+      response += `Based on your symptoms: ${[...session.symptoms].join(', ')}\n\n`;
       response += `Diagnosis: **${bestMatch.diagnosis}**\n`;
 
-      response += "\n\nApa yang ingin Anda lakukan selanjutnya?\n";
-      response += "1. Tambahkan gejala baru\n";
-      response += "2. Pelajari tentang diagnosis ini\n";
-      response += "3. Dapatkan saran penanganan\n";
-      response += "4. Mulai percakapan baru (ketik 'reset')";
+      response += "\n\nWhat would you like to do next?\n";
+      response += "1. Add more symptoms\n";
+      response += "2. Learn about this diagnosis\n";
+      response += "3. Get treatment advice\n";
+      response += "4. Start a new conversation (type 'reset')";
 
       return res.json({
         response: response,
@@ -139,13 +130,11 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Partial match logic
     const partialMatches = [];
     const threshold = 0.7;
 
     for (const rule of rules) {
       const ruleSymptoms = new Set(rule.symptoms.map(s => s.toLowerCase()));
-
       const matchedConditionsCount = [...ruleSymptoms].filter(symptom => userSymptoms.has(symptom)).length;
       const matchRatio = matchedConditionsCount / ruleSymptoms.size;
 
@@ -167,16 +156,16 @@ router.post('/', async (req, res) => {
       session.diagnosis = bestPartial.diagnosis;
       session.confidence = bestPartial.matchRatio;
 
-      response += `Berdasarkan gejala yang Anda sebutkan: ${[...session.symptoms].join(', ')}\n\n`;
-      response += `Diagnosis kemungkinan: **${bestPartial.diagnosis}**\n`;
-      response += `(Tingkat kecocokan: ${Math.round(bestPartial.matchRatio * 100)}% - `;
-      response += `${bestPartial.matchedConditions}/${bestPartial.totalConditions} gejala cocok)`;
+      response += `Based on your symptoms: ${[...session.symptoms].join(', ')}\n\n`;
+      response += `Possible diagnosis: **${bestPartial.diagnosis}**\n`;
+      response += `(Match level: ${Math.round(bestPartial.matchRatio * 100)}% - `;
+      response += `${bestPartial.matchedConditions}/${bestPartial.totalConditions} symptoms matched)`;
 
-      response += "\n\nApa yang ingin Anda lakukan selanjutnya?\n";
-      response += "1. Tambahkan gejala untuk meningkatkan akurasi\n";
-      response += "2. Pelajari tentang diagnosis ini\n";
-      response += "3. Dapatkan saran penanganan\n";
-      response += "4. Mulai percakapan baru (ketik 'reset')";
+      response += "\n\nWhat would you like to do next?\n";
+      response += "1. Add more symptoms to improve accuracy\n";
+      response += "2. Learn about this diagnosis\n";
+      response += "3. Get treatment advice\n";
+      response += "4. Start a new conversation (type 'reset')";
 
       return res.json({
         response: response,
@@ -188,9 +177,9 @@ router.post('/', async (req, res) => {
       });
     }
 
-    response += "Saya belum bisa menentukan diagnosis pasti berdasarkan gejala yang Anda berikan.\n\n";
-    response += `Gejala yang Anda sebutkan: ${[...session.symptoms].join(', ')}\n\n`;
-    response += "Silakan tambahkan gejala lain yang mungkin terkait, atau ketik 'reset' untuk memulai percakapan baru.";
+    response += "I can't determine an exact diagnosis yet based on your symptoms.\n\n";
+    response += `Symptoms you mentioned: ${[...session.symptoms].join(', ')}\n\n`;
+    response += "Please add any other relevant symptoms, or type 'reset' to start a new conversation.";
 
     return res.json({
       response: response,
@@ -201,87 +190,82 @@ router.post('/', async (req, res) => {
   } catch (err) {
     console.error('Chatbot error:', err);
     return res.status(500).json({
-      error: 'Terjadi kesalahan internal',
+      error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? err.message : null
     });
   }
 });
 
-// Endpoint untuk follow-up questions
 router.post('/followup', async (req, res) => {
   const { message, sessionId } = req.body;
-  
+
   if (!sessionId) {
-    return res.status(400).json({ error: 'Session ID diperlukan' });
+    return res.status(400).json({ error: 'Session ID is required' });
   }
-  
+
   const session = SessionManager.getSession(sessionId);
   if (!session) {
-    return res.status(404).json({ error: 'Session tidak ditemukan' });
+    return res.status(404).json({ error: 'Session not found' });
   }
-  
+
   try {
-    // Handle treatment questions
-    if (message.match(/\b(penanganan|pengobatan|saran|treatment|apa yang harus dilakukan)\b/i)) {
+    if (message.match(/\b(treatment|advice|what to do|therapy|solution)\b/i)) {
       const advice = getTreatmentAdvice(session.diagnosis);
       return res.json({
-        response: `Untuk diagnosis **${session.diagnosis}**:\n${advice}`,
+        response: `For diagnosis **${session.diagnosis}**:\n${advice}`,
         sessionId: session.id
       });
     }
-    
-    // Handle diagnosis explanation
-    if (message.match(/\b(penjelasan|apa itu|erangkan|definisi)\b/i)) {
+
+    if (message.match(/\b(what is|explain|definition|description)\b/i)) {
       const explanation = getDiseaseExplanation(session.diagnosis);
       return res.json({
         response: `**${session.diagnosis}**:\n${explanation}`,
         sessionId: session.id
       });
     }
-    
-    // Handle additional symptoms
-    if (message.match(/\b(gejala|tambahkan|lagi|juga)\b/i)) {
+
+    if (message.match(/\b(symptom|add|more|also)\b/i)) {
       const prevSymptoms = session.symptoms.size;
       session.addSymptomsFromMessage(message);
       const newSymptoms = session.symptoms.size - prevSymptoms;
-      
+
       if (newSymptoms > 0) {
         return res.json({
-          response: `${newSymptoms} gejala baru telah ditambahkan. Kirim 'analisa' untuk meninjau diagnosis.`,
+          response: `${newSymptoms} new symptom(s) added. Send 'analyze' to recheck diagnosis.`,
           sessionId: session.id,
           symptoms: [...session.symptoms]
         });
       }
-      
+
       return res.json({
-        response: "Tidak menemukan gejala baru. Silakan jelaskan gejala tambahan yang Anda alami.",
+        response: "No new symptoms found. Please describe additional symptoms you're experiencing.",
         sessionId: session.id
       });
     }
-    
-    // Handle re-analysis
-    if (message.match(/\b(analisa|analisis|diagnosa|periksa)\b/i)) {
+
+    if (message.match(/\b(analyze|diagnose|check|reanalyze)\b/i)) {
       return res.json({
-        response: "Memproses ulang diagnosis dengan gejala terbaru...",
+        response: "Reprocessing diagnosis with updated symptoms...",
         sessionId: session.id,
-        redirect: true // Client should resend symptoms
+        redirect: true
       });
     }
-    
-    // Default response
+
     return res.json({
-      response: "Saya tidak mengerti permintaan Anda. Silakan pilih opsi:\n1. Minta penjelasan diagnosis\n2. Minta saran penanganan\n3. Tambahkan gejala\n4. Reset percakapan",
+      response: "I didn't understand your request. You can:\n1. Ask for diagnosis explanation\n2. Ask for treatment advice\n3. Add symptoms\n4. Reset conversation",
       sessionId: session.id
     });
-    
+
   } catch (err) {
     console.error('Follow-up error:', err);
-    return res.status(500).json({ 
-      error: 'Terjadi kesalahan internal',
+    return res.status(500).json({
+      error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? err.message : null
     });
   }
 });
+
 
 // Helper functions for medical knowledge
 function getTreatmentAdvice(diagnosis) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 
@@ -6,8 +6,50 @@ function UserDashboard() {
   const [message, setMessage] = useState('');
   const [conversation, setConversation] = useState([]);
   const [language, setLanguage] = useState('english');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
 
   const token = localStorage.getItem('token');
+
+  useEffect(() => {
+    // Initialize SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = language === 'english' ? 'en-US' : 'id-ID';
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setMessage(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error', event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    } else {
+      console.warn('SpeechRecognition API not supported in this browser.');
+    }
+  }, [language]);
+
+  useEffect(() => {
+    // Speak bot responses using speech synthesis
+    if (conversation.length > 0) {
+      const lastMessage = conversation[conversation.length - 1];
+      if (lastMessage.sender === 'bot') {
+        const utterance = new SpeechSynthesisUtterance(lastMessage.text);
+        utterance.lang = language === 'english' ? 'en-US' : 'id-ID';
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  }, [conversation, language]);
 
   const handleSend = async () => {
     if (!message.trim()) return;
@@ -29,6 +71,16 @@ function UserDashboard() {
     }
   };
 
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current && recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current && recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
+
   return (
     <>
       <Navbar />
@@ -40,6 +92,7 @@ function UserDashboard() {
             id="language-select"
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
+            disabled={isListening}
           >
             <option value="english">English</option>
             <option value="indonesian">Indonesian</option>
@@ -75,10 +128,16 @@ function UserDashboard() {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Type your symptoms here..."
+          disabled={isListening}
         />
-        <button onClick={handleSend} style={{ marginTop: 10, alignSelf: 'flex-end' }}>
-          Send
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+          <button onClick={handleSend} style={{ alignSelf: 'flex-end' }} disabled={isListening}>
+            Send
+          </button>
+          <button onClick={toggleListening} style={{ alignSelf: 'flex-end' }}>
+            {isListening ? 'Stop Listening' : 'Start Speaking'}
+          </button>
+        </div>
       </div>
     </>
   );
